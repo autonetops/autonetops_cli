@@ -7,6 +7,7 @@ def load_yaml(file_path):
     try:
         with open(file_path, 'r') as yf:
             data = yaml.safe_load(yf)
+        return data
     except FileNotFoundError:
         return (f"YAML file {file_path} not found!")
         
