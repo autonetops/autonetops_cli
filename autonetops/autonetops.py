@@ -48,6 +48,8 @@ def task(ctx, task_number):
         commands = convert_yaml_to_commands(config)
         conn.send_config_set(commands)
         conn.disconnect()
+        print(f"Configuration pushed to {device} successfully.")
+    
 
 if __name__ == '__main__':
     cli()
