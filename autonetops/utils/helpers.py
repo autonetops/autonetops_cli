@@ -1,17 +1,24 @@
 import yaml
 from netmiko import ConnectHandler
+import os
+
 def load_yaml(file_path):
-    """
-    Load a YAML file and return its content.
-    """
+    print(f"Attempting to load: {file_path}")
+    print(f"File exists: {os.path.exists(file_path)}")
     try:
-        with open(file_path, 'r') as yf:
+        with open(file_path, 'r', encoding='utf-8') as yf:
             data = yaml.safe_load(yf)
+        print("File loaded successfully")
         return data
     except FileNotFoundError:
-        raise FileNotFoundError(f"File {file_path} not found.")
+        print(f"File {file_path} not found.")
+        raise
     except yaml.YAMLError as e:
-        raise yaml.YAMLError(f"Error parsing YAML file {file_path}: {e}")
+        print(f"Error parsing YAML file {file_path}: {e}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        raise
         
 
 def convert_yaml_to_commands(config):
