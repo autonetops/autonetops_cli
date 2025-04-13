@@ -38,7 +38,7 @@ def task(ctx, task_number):
     wsf = os.getenv("CONTAINERWSF", os.getcwd())
     yaml_file = f"task{task_number}.yaml"
 
-    print(f"Loading YAML file: {yaml_file}")
+    print(f"Loading YAML file: {wsf}/solutions/{yaml_file}")
     devices = load_yaml(f'{wsf}/solutions/{yaml_file}')
 
     for device, data in devices.items():
