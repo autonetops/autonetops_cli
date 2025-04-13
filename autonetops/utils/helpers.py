@@ -9,7 +9,9 @@ def load_yaml(file_path):
             data = yaml.safe_load(yf)
         return data
     except FileNotFoundError:
-        return (f"YAML file {file_path} not found!")
+        raise FileNotFoundError(f"File {file_path} not found.")
+    except yaml.YAMLError as e:
+        raise yaml.YAMLError(f"Error parsing YAML file {file_path}: {e}")
         
 
 def convert_yaml_to_commands(config):

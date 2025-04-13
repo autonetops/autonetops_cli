@@ -35,13 +35,12 @@ def task(ctx, task_number):
     display it, and push the configuration to a device.
     """
     # Define filenames based on the task number
-    wsf = os.getenv("$CONTAINERWSF", os.getcwd())
+    wsf = os.getenv("CONTAINERWSF", os.getcwd())
     yaml_file = f"task{task_number}.yaml"
 
     print(f"Loading YAML file: {yaml_file}")
     devices = load_yaml(f'{wsf}/solutions/{yaml_file}')
 
-    print(devices)
     for device, data in devices.items():
         conn = connect_to_device_netmiko(data['conn'])
         config = data['config']
