@@ -2,6 +2,11 @@ import click
 import os
 from jinja2 import Template, Environment
 import ipdb
+from utils.helpers import (
+    load_yaml,
+    convert_yaml_to_commands,
+    connect_to_device_netmiko
+)
 
 @click.group(help="Utilities for autonetops automation.")
 @click.option("--debug", is_flag=True, help="Print debug messages during processing")
@@ -30,11 +35,18 @@ def task(ctx, task_number):
     display it, and push the configuration to a device.
     """
     # Define filenames based on the task number
-    folder = ''
-    yaml_file = folder + f"task{task_number}.yaml"
+    workspace_folder = os.getenv("$CONTAINERWSF", os.getcwd())
+    yaml_file = f"task{task_number}.yaml"
 
     print(f"Loading YAML file: {yaml_file}")
-    
+    devices = load_yaml(f'{workspace_folder}/solutions/{yaml_file}')
+
+    for device, data in devices.items():
+        conn = connect_to_device_netmiko(data['conn'])
+        config = data['config']
+        commands = convert_yaml_to_commands(config)
+        conn.send_config_set(commands)
+        conn.disconnect()
 
 if __name__ == '__main__':
     cli()

@@ -12,10 +12,9 @@ def load_yaml(file_path):
         
 
 def convert_yaml_to_commands(config):
-    """Convert YAML config to list of commands"""
+    """split a YAML configuration string into a list of commands."""
     commands = []
-    for line in config.split('\n'):
-        line = line.strip()
+    for line in config.splitlines():
         commands.append(line.lstrip())
     return commands
 
