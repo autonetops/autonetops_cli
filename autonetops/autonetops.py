@@ -1,8 +1,7 @@
 import click
 import os
 from jinja2 import Template, Environment
-import ipdb
-from utils.helpers import (
+from .utils.helpers import (
     load_yaml,
     convert_yaml_to_commands,
     connect_to_device_netmiko
