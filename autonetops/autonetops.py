@@ -44,6 +44,7 @@ def task(ctx, task_number):
         conn = connect_to_device_netmiko(data['conn'])
         config = data['config']
         commands = convert_yaml_to_commands(config)
+        conn.enable()
         conn.send_config_set(commands)
         conn.disconnect()
         print(f"Configuration pushed to {device} successfully.")
