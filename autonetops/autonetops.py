@@ -6,6 +6,7 @@ from .utils.helpers import (
     convert_yaml_to_commands,
     connect_to_device_netmiko
 )
+from rich import print as rprint
 
 @click.group(help="Utilities for autonetops automation.")
 @click.option("--debug", is_flag=True, help="Print debug messages during processing")
@@ -27,8 +28,13 @@ def cli(ctx, inventory, debug, cli_verbose):
 
 @cli.command(name="task", help="Render configuration from task<TASK_NUMBER>.yaml and task<TASK_NUMBER>.j2, display it, and push the configuration to a device.")
 @click.argument('task_number')
+@click.option(
+    "--show",
+    is_flag=True,
+    help="Show the rendered configuration instead of pushing it to the device",
+)
 @click.pass_context
-def task(ctx, task_number):
+def task(ctx, task_number, show):
     """
     Render configuration from task<TASK_NUMBER>.yaml and task<TASK_NUMBER>.j2,
     display it, and push the configuration to a device.
@@ -41,13 +47,24 @@ def task(ctx, task_number):
     devices = load_yaml(f'{wsf}/solutions/{yaml_file}')
 
     for device, data in devices.items():
-        conn = connect_to_device_netmiko(data['conn'])
         config = data['config']
         commands = convert_yaml_to_commands(config)
-        conn.enable()
-        conn.send_config_set(commands)
-        conn.disconnect()
-        print(f"Configuration pushed to {device} successfully.")
+        
+        if show:
+            rprint(f"[blue]Rendered configuration for {device}:[/blue]")
+            for command in commands:
+                rprint(f"[green]{command}[/green]")
+        else:
+            try:
+                conn = connect_to_device_netmiko(data['conn'])
+                conn.enable()
+                conn.send_config_set(commands)
+                conn.disconnect()
+                print(f"Configuration pushed to {device} successfully.")
+            except Exception as e:
+                print(f"Failed to push configuration to {device}: {e}")
+                if ctx.obj["debug"]:
+                    rprint(f"[red]Error:[/red] {e}")
     
 
 if __name__ == '__main__':
