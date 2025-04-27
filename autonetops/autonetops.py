@@ -51,9 +51,9 @@ def task(ctx, task_number, show):
         commands = convert_yaml_to_commands(config)
         
         if show:
-            rprint(f"[blue]Rendered configuration for {device}:[/blue]")
+            rprint(f"[blue]{device}:[/blue]")
             for command in commands:
-                rprint(f"[green]{command}[/green]")
+                rprint(f"[green]{config}[/green]")
         else:
             try:
                 conn = connect_to_device_netmiko(data['conn'])
