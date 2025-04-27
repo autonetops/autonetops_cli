@@ -52,8 +52,7 @@ def task(ctx, task_number, show):
         
         if show:
             rprint(f"[blue]{device}:[/blue]")
-            for command in commands:
-                rprint(f"[green]{config}[/green]")
+            rprint(f"[green]{config}[/green]")
         else:
             try:
                 conn = connect_to_device_netmiko(data['conn'])
