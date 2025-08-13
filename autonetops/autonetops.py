@@ -26,6 +26,14 @@ def cli(ctx, inventory, debug, cli_verbose):
     ctx.obj["inventory"] = inventory
     ctx.obj["task_number"] = set()
 
+
+@cli.command(name="wireshark", help="Installs edgeshark on a device and spins up")
+@click.pass_context
+def wireshark(ctx):
+    os.system("curl -sL \
+        https://github.com/siemens/edgeshark/raw/main/deployments/wget/docker-compose.yaml \
+        | DOCKER_DEFAULT_PLATFORM= docker compose -f - up -d")    
+
 @cli.command(name="task", help="Render configuration from task<TASK_NUMBER>.yaml and task<TASK_NUMBER>.j2, display it, and push the configuration to a device.")
 @click.argument('task_number')
 @click.option(
