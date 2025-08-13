@@ -34,7 +34,7 @@ def wireshark(ctx):
         https://github.com/siemens/edgeshark/raw/main/deployments/wget/docker-compose.yaml \
         | DOCKER_DEFAULT_PLATFORM= docker compose -f - up -d")    
 
-        rprint(f"[green]Edgeshark installed and running on https://{os.getenv('CONTAINERWSF')}:5001[/green]")
+    rprint(f"[green]Edgeshark installed and running on https://{os.getenv('CONTAINERWSF')}:5001[/green]")
 
 @cli.command(name="task", help="Render configuration from task<TASK_NUMBER>.yaml and task<TASK_NUMBER>.j2, display it, and push the configuration to a device.")
 @click.argument('task_number')
