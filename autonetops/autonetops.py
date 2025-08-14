@@ -82,8 +82,9 @@ def restart(ctx, lab_name):
     """
     Restart the lab with the specified lab name.
     """
-    wsf = os.getenv("CONTAINERWSF", os.getcwd())
-    lab_file = f"{wsf}/solutions/{lab_name}"
+    wsf = lab_name if lab_name else os.getenv("CONTAINERWSF", os.getcwd())
+
+    lab_file = f"{wsf}/clab/lab.clab.yaml"
     
     if not os.path.exists(lab_file):
         rprint(f"[red]Lab file {lab_file} does not exist.[/red]")
