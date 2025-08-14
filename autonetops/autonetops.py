@@ -74,7 +74,25 @@ def task(ctx, task_number, show):
                 print(f"Failed to push configuration to {device}: {e}")
                 if ctx.obj["debug"]:
                     rprint(f"[red]Error:[/red] {e}")
-    
 
+@cli.command(name="restart", help="Restart the lab with the specified lab name.")
+@click.argument('lab_name', default='clab/lab.clab.yaml') 
+@click.pass_context   
+def restart(ctx, lab_name):
+    """
+    Restart the lab with the specified lab name.
+    """
+    wsf = os.getenv("CONTAINERWSF", os.getcwd())
+    lab_file = f"{wsf}/solutions/{lab_name}"
+    
+    if not os.path.exists(lab_file):
+        rprint(f"[red]Lab file {lab_file} does not exist.[/red]")
+        return
+    
+    rprint(f"[blue]Restarting lab[/blue]")
+    os.system(f"sudo clab restart -c -t {lab_file}")
+    for i in range(6):
+        os.system(f"ssh-keygen -f '~/.ssh/known_hosts' -R '172.20.20.1{i}'")
+    # Here you would add the logic to restart the lab, e.g., using a container management tool
 if __name__ == '__main__':
     cli()
