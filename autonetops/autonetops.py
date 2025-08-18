@@ -76,13 +76,13 @@ def task(ctx, task_number, show):
                     rprint(f"[red]Error:[/red] {e}")
 
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
-@click.argument('lab_name', default='clab/lab.clab.yaml') 
+@click.argument('lab_name') 
 @click.pass_context   
 def restart(ctx, lab_name):
     """
     Restart the lab with the specified lab name.
     """
-    wsf = lab_name if lab_name else os.getenv("CONTAINERWSF", os.getcwd())
+    wsf = f'/{lab_name}' if lab_name else os.getenv("CONTAINERWSF", os.getcwd())
 
     lab_file = f"{wsf}/clab/lab.clab.yaml"
     
