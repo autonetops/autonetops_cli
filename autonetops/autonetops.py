@@ -76,13 +76,13 @@ def task(ctx, task_number, show):
                     rprint(f"[red]Error:[/red] {e}")
 
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
-@click.argument('lab_name') 
+@click.option('--lab') 
 @click.pass_context   
-def restart(ctx, lab_name):
+def restart(ctx, lab):
     """
     Restart the lab with the specified lab name.
     """
-    wsf = f'/{lab_name}' if lab_name else os.getenv("CONTAINERWSF", os.getcwd())
+    wsf = f'/{lab}' if lab else os.getenv("CONTAINERWSF", os.getcwd())
 
     lab_file = f"{wsf}/clab/lab.clab.yaml"
     
@@ -91,7 +91,7 @@ def restart(ctx, lab_name):
         return
     
     rprint(f"[blue]Restarting lab[/blue]")
-    os.system(f"sudo clab restart -c -t {lab_file}")
+    os.system(f"containerlab redeploy -c -t {lab_file}")
     for i in range(6):
         os.system(f"ssh-keygen -f '~/.ssh/known_hosts' -R '172.20.20.1{i}'")
     # Here you would add the logic to restart the lab, e.g., using a container management tool
