@@ -32,12 +32,12 @@ def cli(ctx, inventory, debug, cli_verbose):
 def wireshark(ctx):
     os.system("curl -sL \
         https://github.com/siemens/edgeshark/raw/main/deployments/wget/docker-compose.yaml \
-        | DOCKER_DEFAULT_PLATFORM= docker compose -f - up -d")    
+        | DOCKER_DEFAULT_PLATFORM= docker compose -f - up -d")
 
     rprint(f"[green]Edgeshark installed and running on https://{os.getenv('CONTAINERWSF')}:5001[/green]")
 
-@cli.command(name="task", help="Render configuration from task<TASK_NUMBER>.yaml and task<TASK_NUMBER>.j2, display it, and push the configuration to a device.")
-@click.argument('task_number')
+@cli.command(name="task", help="Render configuration from task <TASK_NUMBER>")
+@click.argument('task_number', type=int)
 @click.option(
     "--show",
     is_flag=True,
@@ -53,13 +53,13 @@ def task(ctx, task_number, show):
     wsf = os.getenv("CONTAINERWSF", os.getcwd())
     yaml_file = f"task{task_number}.yaml"
 
-    print(f"Loading YAML file: {wsf}/solutions/{yaml_file}")
+    #print(f"Loading YAML file: {wsf}/solutions/{yaml_file}")
     devices = load_yaml(f'{wsf}/solutions/{yaml_file}')
 
     for device, data in devices.items():
         config = data['config']
         commands = convert_yaml_to_commands(config)
-        
+
         if show:
             rprint(f"[blue]{device}:[/blue]")
             rprint(f"[green]{config}[/green]")
@@ -69,15 +69,15 @@ def task(ctx, task_number, show):
                 conn.enable()
                 conn.send_config_set(commands)
                 conn.disconnect()
-                print(f"Configuration pushed to {device} successfully.")
+                rprint(f"[green]Configuration pushed to {device} successfully.[/green]")
             except Exception as e:
-                print(f"Failed to push configuration to {device}: {e}")
+                rprint(f"Failed to push configuration to {device}: {e}")
                 if ctx.obj["debug"]:
                     rprint(f"[red]Error:[/red] {e}")
 
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
-@click.option('--lab') 
-@click.pass_context   
+@click.option('--lab')
+@click.pass_context
 def restart(ctx, lab):
     """
     Restart the lab with the specified lab name.
@@ -85,11 +85,11 @@ def restart(ctx, lab):
     wsf = f'/{lab}' if lab else os.getenv("CONTAINERWSF", os.getcwd())
 
     lab_file = f"{wsf}/clab/lab.clab.yaml"
-    
+
     if not os.path.exists(lab_file):
         rprint(f"[red]Lab file {lab_file} does not exist.[/red]")
         return
-    
+
     rprint(f"[blue]Restarting lab[/blue]")
     os.system(f"containerlab redeploy -c -t {lab_file}")
     for i in range(6):
