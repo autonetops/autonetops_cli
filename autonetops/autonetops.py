@@ -27,14 +27,13 @@ def cli(ctx, inventory, debug, cli_verbose):
     ctx.obj["task_number"] = set()
 
 
-@cli.command(name="wireshark", help="Installs edgeshark on a device and spins up")
+@cli.command(name="wireshark", help="Instala as imagens para capturar pacotes")
 @click.pass_context
 def wireshark(ctx):
-    os.system("curl -sL \
-        https://github.com/siemens/edgeshark/raw/main/deployments/wget/docker-compose.yaml \
-        | DOCKER_DEFAULT_PLATFORM= docker compose -f - up -d")
+    os.system("docker pull ghcr.io/siemens/ghostwire:latest")
+    os.system("docker pull ghcr.io/siemens/packetflix:latest")
 
-    rprint(f"[green]Edgeshark installed and running on https://{os.getenv('CONTAINERWSF')}:5001[/green]")
+    rprint(f"[green]Imagens Instaladas. Comece as capturas...[/green]")
 
 @cli.command(name="task", help="Render configuration from task <TASK_NUMBER>")
 @click.argument('task_number', type=int)
@@ -93,7 +92,7 @@ def restart(ctx, lab):
     rprint(f"[blue]Restarting lab[/blue]")
     os.system(f"containerlab redeploy -c -t {lab_file}")
     for i in range(6):
-        os.system(f"ssh-keygen -f '~/.ssh/known_hosts' -R '172.20.20.1{i}'")
+        os.system(f"ssh-keygen -f '/home/vscode/.ssh/known_hosts' -R '172.20.20.1{i}'")
     # Here you would add the logic to restart the lab, e.g., using a container management tool
 if __name__ == '__main__':
     cli()
