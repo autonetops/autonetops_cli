@@ -60,30 +60,54 @@ def wireshark(ctx):
     rprint("[green]Imagens Instaladas. Comece as capturas...[/green]")
 
 
-@cli.command(name="task", help="Render configuration from task <TASK_NUMBER>")
-@click.argument("task_number", type=int)
+def parse_task_range(value):
+    """Parse a task range string like '3' or '2-5' into a list of ints."""
+    if "-" in value:
+        parts = value.split("-", 1)
+        try:
+            start, end = int(parts[0]), int(parts[1])
+        except ValueError:
+            raise click.BadParameter(f"Invalid range '{value}'. Use a number or range like 2-5.")
+        if start > end:
+            raise click.BadParameter(f"Start ({start}) must be <= end ({end}).")
+        return list(range(start, end + 1))
+    try:
+        return [int(value)]
+    except ValueError:
+        raise click.BadParameter(f"Invalid task number '{value}'. Use a number or range like 2-5.")
+
+
+@cli.command(name="task", help="Render and push configuration from task(s). Accepts a single number (3) or a range (2-5).")
+@click.argument("task_range", type=str)
 @click.option(
     "--show",
     is_flag=True,
     help="Show the rendered configuration instead of pushing it to the device",
 )
 @click.pass_context
-def task(ctx, task_number, show):
+def task(ctx, task_range, show):
     """
-    Render configuration from task<TASK_NUMBER>.yaml,
-    display it, and push the configuration to devices.
+    Render configuration from task YAML files and push to devices.
+
+    TASK_RANGE can be a single number (e.g. 3) or a range (e.g. 2-5).
+    When a range is given, tasks are applied sequentially in order.
     """
+    task_numbers = parse_task_range(task_range)
     wsf = os.getenv("CONTAINERWSF", os.getcwd())
-    yaml_file = f"task{task_number}.yaml"
-    devices = load_yaml(f"{wsf}/solutions/{yaml_file}")
 
-    for device, data in devices.items():
-        if show:
-            rprint(f"[blue]{device}:[/blue]")
-            rprint(f"[green]{data['config']}[/green]")
+    for task_number in task_numbers:
+        yaml_file = f"task{task_number}.yaml"
+        yaml_path = f"{wsf}/solutions/{yaml_file}"
+        rprint(f"[bold blue]--- Task {task_number} ---[/bold blue]")
+        devices = load_yaml(yaml_path)
 
-    if not show:
-        asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
+        for device, data in devices.items():
+            if show:
+                rprint(f"[blue]{device}:[/blue]")
+                rprint(f"[green]{data['config']}[/green]")
+
+        if not show:
+            asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
 
 
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
