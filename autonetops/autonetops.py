@@ -60,24 +60,47 @@ def wireshark(ctx):
     rprint("[green]Imagens Instaladas. Comece as capturas...[/green]")
 
 
-def parse_task_range(value):
-    """Parse a task range string like '3' or '2-5' into a list of ints."""
+def discover_task_numbers(solutions_dir):
+    """Find all task<N>.yaml files in the solutions directory and return sorted task numbers."""
+    import glob
+    pattern = os.path.join(solutions_dir, "task*.yaml")
+    numbers = []
+    for path in glob.glob(pattern):
+        basename = os.path.basename(path)
+        # Extract number from "task<N>.yaml"
+        num_str = basename.removeprefix("task").removesuffix(".yaml")
+        try:
+            numbers.append(int(num_str))
+        except ValueError:
+            continue
+    return sorted(numbers)
+
+
+def parse_task_range(value, solutions_dir=None):
+    """Parse a task range string like '3', '2-5', or 'all' into a list of ints."""
+    if value == "all":
+        if solutions_dir is None:
+            raise click.BadParameter("Cannot use 'all' without a solutions directory.")
+        numbers = discover_task_numbers(solutions_dir)
+        if not numbers:
+            raise click.BadParameter(f"No task files found in {solutions_dir}.")
+        return numbers
     if "-" in value:
         parts = value.split("-", 1)
         try:
             start, end = int(parts[0]), int(parts[1])
         except ValueError:
-            raise click.BadParameter(f"Invalid range '{value}'. Use a number or range like 2-5.")
+            raise click.BadParameter(f"Invalid range '{value}'. Use a number, range (2-5), or 'all'.")
         if start > end:
             raise click.BadParameter(f"Start ({start}) must be <= end ({end}).")
         return list(range(start, end + 1))
     try:
         return [int(value)]
     except ValueError:
-        raise click.BadParameter(f"Invalid task number '{value}'. Use a number or range like 2-5.")
+        raise click.BadParameter(f"Invalid task '{value}'. Use a number, range (2-5), or 'all'.")
 
 
-@cli.command(name="task", help="Render and push configuration from task(s). Accepts a single number (3) or a range (2-5).")
+@cli.command(name="task", help="Render and push configuration from task(s). Accepts a number (3), range (2-5), or 'all'.")
 @click.argument("task_range", type=str)
 @click.option(
     "--show",
@@ -89,11 +112,12 @@ def task(ctx, task_range, show):
     """
     Render configuration from task YAML files and push to devices.
 
-    TASK_RANGE can be a single number (e.g. 3) or a range (e.g. 2-5).
-    When a range is given, tasks are applied sequentially in order.
+    TASK_RANGE can be a single number (3), a range (2-5), or 'all' to
+    run every task file found in the solutions directory in order.
     """
-    task_numbers = parse_task_range(task_range)
     wsf = os.getenv("CONTAINERWSF", os.getcwd())
+    solutions_dir = f"{wsf}/solutions"
+    task_numbers = parse_task_range(task_range, solutions_dir)
 
     for task_number in task_numbers:
         yaml_file = f"task{task_number}.yaml"

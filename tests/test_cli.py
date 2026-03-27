@@ -33,6 +33,27 @@ class TestParseTaskRange:
         with pytest.raises(click.BadParameter):
             parse_task_range("5-2")
 
+    def test_all_discovers_tasks(self, tmp_path):
+        """Test 'all' discovers and sorts task files."""
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        (solutions / "task3.yaml").write_text("")
+        (solutions / "task1.yaml").write_text("")
+        (solutions / "task10.yaml").write_text("")
+        assert parse_task_range("all", str(solutions)) == [1, 3, 10]
+
+    def test_all_no_tasks_found(self, tmp_path):
+        """Test 'all' raises when no task files exist."""
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        with pytest.raises(click.BadParameter, match="No task files found"):
+            parse_task_range("all", str(solutions))
+
+    def test_all_without_solutions_dir(self):
+        """Test 'all' raises when no solutions dir is provided."""
+        with pytest.raises(click.BadParameter):
+            parse_task_range("all")
+
 
 class TestCliGroup:
     """Tests for the main CLI group."""
@@ -135,6 +156,29 @@ class TestTaskCommand:
         assert "sw1" in result.output
         assert "sw2" in result.output
         assert "sw3" in result.output
+
+    def test_task_all_show(self, tmp_path):
+        """Test 'autonetops task all --show' discovers and shows all tasks."""
+        solutions = tmp_path / "solutions"
+        solutions.mkdir(parents=True)
+        for i in [1, 3, 5]:
+            devices = {
+                f"dev{i}": {
+                    "config": f"hostname Dev{i}",
+                    "conn": {"host": f"10.0.0.{i}", "auth_username": "admin", "auth_password": "pass"},
+                }
+            }
+            (solutions / f"task{i}.yaml").write_text(yaml.dump(devices))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["task", "all", "--show"])
+        assert result.exit_code == 0
+        assert "dev1" in result.output
+        assert "dev3" in result.output
+        assert "dev5" in result.output
+        assert "Task 1" in result.output
+        assert "Task 5" in result.output
 
     def test_task_push_config_failure(self, tmp_path):
         """Test task command handling connection failure."""
