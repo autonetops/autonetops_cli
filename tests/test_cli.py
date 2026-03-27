@@ -204,6 +204,101 @@ class TestTaskCommand:
         assert "Failed to push configuration" in result.output
 
 
+class TestTshootCommand:
+    """Tests for the tshoot command."""
+
+    def test_tshoot_no_scenario_file(self, tmp_path):
+        """Test tshoot when scenario file does not exist."""
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["tshoot", "1"])
+        assert result.exit_code == 0
+        assert "has no troubleshooting scenario" in result.output
+
+    def test_tshoot_show(self, tmp_path):
+        """Test tshoot --show displays scenario and configs."""
+        scenario_data = {
+            "scenario": "Router1 cannot reach Router2. Find and fix the issue.",
+            "devices": {
+                "router1": {
+                    "config": "interface Gi0/0\n shutdown",
+                    "conn": {"host": "10.0.0.1", "auth_username": "admin", "auth_password": "pass"},
+                }
+            },
+        }
+        solutions = tmp_path / "solutions"
+        solutions.mkdir(parents=True)
+        (solutions / "tshoot1.yaml").write_text(yaml.dump(scenario_data))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["tshoot", "1", "--show"])
+        assert result.exit_code == 0
+        assert "Router1 cannot reach Router2" in result.output
+        assert "router1" in result.output
+        assert "shutdown" in result.output
+
+    def test_tshoot_push(self, tmp_path):
+        """Test tshoot pushes broken config and shows scenario."""
+        scenario_data = {
+            "scenario": "OSPF adjacency is down between routers.",
+            "devices": {
+                "router1": {
+                    "config": "router ospf 1\n passive-interface Gi0/0",
+                    "conn": {"host": "10.0.0.1", "auth_username": "admin", "auth_password": "pass"},
+                }
+            },
+        }
+        solutions = tmp_path / "solutions"
+        solutions.mkdir(parents=True)
+        (solutions / "tshoot1.yaml").write_text(yaml.dump(scenario_data))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            with patch("autonetops.autonetops.connect_and_send_config", new_callable=AsyncMock):
+                result = runner.invoke(cli, ["tshoot", "1"])
+        assert result.exit_code == 0
+        assert "OSPF adjacency is down" in result.output
+        assert "Good luck!" in result.output
+
+    def test_tshoot_no_devices(self, tmp_path):
+        """Test tshoot with scenario but no devices section."""
+        scenario_data = {
+            "scenario": "Investigate why the network is slow.",
+        }
+        solutions = tmp_path / "solutions"
+        solutions.mkdir(parents=True)
+        (solutions / "tshoot1.yaml").write_text(yaml.dump(scenario_data))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["tshoot", "1"])
+        assert result.exit_code == 0
+        assert "Investigate why the network is slow" in result.output
+        assert "No device configurations found" in result.output
+
+    def test_tshoot_missing_scenario_key(self, tmp_path):
+        """Test tshoot with no scenario key falls back to default message."""
+        scenario_data = {
+            "devices": {
+                "router1": {
+                    "config": "hostname Broken",
+                    "conn": {"host": "10.0.0.1", "auth_username": "admin", "auth_password": "pass"},
+                }
+            },
+        }
+        solutions = tmp_path / "solutions"
+        solutions.mkdir(parents=True)
+        (solutions / "tshoot1.yaml").write_text(yaml.dump(scenario_data))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            with patch("autonetops.autonetops.connect_and_send_config", new_callable=AsyncMock):
+                result = runner.invoke(cli, ["tshoot", "1"])
+        assert result.exit_code == 0
+        assert "No scenario description provided" in result.output
+
+
 class TestRestartCommand:
     """Tests for the restart command."""
 

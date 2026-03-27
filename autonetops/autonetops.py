@@ -134,6 +134,46 @@ def task(ctx, task_range, show):
             asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
 
 
+@cli.command(name="tshoot", help="Deploy a troubleshooting scenario and display the challenge.")
+@click.argument("scenario_number", type=int)
+@click.option(
+    "--show",
+    is_flag=True,
+    help="Show the scenario description without pushing the broken config",
+)
+@click.pass_context
+def tshoot(ctx, scenario_number, show):
+    """
+    Load a troubleshooting scenario from tshoot<N>.yaml, push the
+    broken configuration to devices, and display the scenario challenge.
+    """
+    wsf = os.getenv("CONTAINERWSF", os.getcwd())
+    yaml_path = f"{wsf}/solutions/tshoot{scenario_number}.yaml"
+
+    if not os.path.exists(yaml_path):
+        rprint(f"[red]This lab has no troubleshooting scenario {scenario_number}.[/red]")
+        return
+
+    data = load_yaml(yaml_path)
+    scenario = data.get("scenario", "No scenario description provided.")
+    devices = data.get("devices", {})
+
+    rprint(f"[bold blue]--- Troubleshooting Scenario {scenario_number} ---[/bold blue]")
+    rprint(f"[yellow]{scenario}[/yellow]")
+
+    if not devices:
+        rprint("[red]No device configurations found in this scenario.[/red]")
+        return
+
+    if show:
+        for device, device_data in devices.items():
+            rprint(f"[blue]{device}:[/blue]")
+            rprint(f"[green]{device_data['config']}[/green]")
+    else:
+        asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
+        rprint("[bold green]Troubleshooting scenario deployed. Good luck![/bold green]")
+
+
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
 @click.option("--lab")
 @click.pass_context
