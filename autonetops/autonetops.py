@@ -60,30 +60,78 @@ def wireshark(ctx):
     rprint("[green]Imagens Instaladas. Comece as capturas...[/green]")
 
 
-@cli.command(name="task", help="Render configuration from task <TASK_NUMBER>")
-@click.argument("task_number", type=int)
+def discover_task_numbers(solutions_dir):
+    """Find all task<N>.yaml files in the solutions directory and return sorted task numbers."""
+    import glob
+    pattern = os.path.join(solutions_dir, "task*.yaml")
+    numbers = []
+    for path in glob.glob(pattern):
+        basename = os.path.basename(path)
+        # Extract number from "task<N>.yaml"
+        num_str = basename.removeprefix("task").removesuffix(".yaml")
+        try:
+            numbers.append(int(num_str))
+        except ValueError:
+            continue
+    return sorted(numbers)
+
+
+def parse_task_range(value, solutions_dir=None):
+    """Parse a task range string like '3', '2-5', or 'all' into a list of ints."""
+    if value == "all":
+        if solutions_dir is None:
+            raise click.BadParameter("Cannot use 'all' without a solutions directory.")
+        numbers = discover_task_numbers(solutions_dir)
+        if not numbers:
+            raise click.BadParameter(f"No task files found in {solutions_dir}.")
+        return numbers
+    if "-" in value:
+        parts = value.split("-", 1)
+        try:
+            start, end = int(parts[0]), int(parts[1])
+        except ValueError:
+            raise click.BadParameter(f"Invalid range '{value}'. Use a number, range (2-5), or 'all'.")
+        if start > end:
+            raise click.BadParameter(f"Start ({start}) must be <= end ({end}).")
+        return list(range(start, end + 1))
+    try:
+        return [int(value)]
+    except ValueError:
+        raise click.BadParameter(f"Invalid task '{value}'. Use a number, range (2-5), or 'all'.")
+
+
+@cli.command(name="task", help="Render and push configuration from task(s). Accepts a number (3), range (2-5), or 'all'.")
+@click.argument("task_range", type=str)
 @click.option(
     "--show",
     is_flag=True,
     help="Show the rendered configuration instead of pushing it to the device",
 )
 @click.pass_context
-def task(ctx, task_number, show):
+def task(ctx, task_range, show):
     """
-    Render configuration from task<TASK_NUMBER>.yaml,
-    display it, and push the configuration to devices.
+    Render configuration from task YAML files and push to devices.
+
+    TASK_RANGE can be a single number (3), a range (2-5), or 'all' to
+    run every task file found in the solutions directory in order.
     """
     wsf = os.getenv("CONTAINERWSF", os.getcwd())
-    yaml_file = f"task{task_number}.yaml"
-    devices = load_yaml(f"{wsf}/solutions/{yaml_file}")
+    solutions_dir = f"{wsf}/solutions"
+    task_numbers = parse_task_range(task_range, solutions_dir)
 
-    for device, data in devices.items():
-        if show:
-            rprint(f"[blue]{device}:[/blue]")
-            rprint(f"[green]{data['config']}[/green]")
+    for task_number in task_numbers:
+        yaml_file = f"task{task_number}.yaml"
+        yaml_path = f"{wsf}/solutions/{yaml_file}"
+        rprint(f"[bold blue]--- Task {task_number} ---[/bold blue]")
+        devices = load_yaml(yaml_path)
 
-    if not show:
-        asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
+        for device, data in devices.items():
+            if show:
+                rprint(f"[blue]{device}:[/blue]")
+                rprint(f"[green]{data['config']}[/green]")
+
+        if not show:
+            asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
 
 
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
