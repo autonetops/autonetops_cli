@@ -2,9 +2,9 @@
 import os
 import pytest
 import yaml
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
-from autonetops.utils.helpers import load_yaml, convert_yaml_to_commands, connect_to_device_netmiko
+from autonetops.utils.helpers import load_yaml, convert_yaml_to_commands, connect_and_send_config
 
 
 class TestLoadYaml:
@@ -65,22 +65,50 @@ class TestConvertYamlToCommands:
         assert result == ["interface Gi0/0", "ip address 10.0.0.1 255.255.255.0"]
 
 
-class TestConnectToDeviceNetmiko:
-    """Tests for the connect_to_device_netmiko function."""
+class TestConnectAndSendConfig:
+    """Tests for the connect_and_send_config function."""
 
-    @patch('autonetops.utils.helpers.ConnectHandler')
-    def test_connect_to_device(self, mock_connect):
-        """Test connecting to a device via Netmiko."""
-        mock_conn = MagicMock()
-        mock_connect.return_value = mock_conn
+    @pytest.mark.asyncio
+    async def test_connect_and_send_config(self):
+        """Test connecting to a device and sending config via scrapli async."""
+        mock_conn = AsyncMock()
+        mock_response = MagicMock()
+        mock_conn.send_configs = AsyncMock(return_value=mock_response)
 
-        device = {
-            "device_type": "cisco_ios",
+        device_conn = {
             "host": "192.168.1.1",
-            "username": "admin",
-            "password": "password",
+            "auth_username": "admin",
+            "auth_password": "password",
+            "platform": "cisco_iosxe",
         }
-        result = connect_to_device_netmiko(device)
+        commands = ["interface Gi0/0", "ip address 10.0.0.1 255.255.255.0"]
 
-        mock_connect.assert_called_once_with(**device)
-        assert result == mock_conn
+        with patch("autonetops.utils.helpers.AsyncScrapli") as mock_scrapli_cls:
+            mock_scrapli_cls.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_scrapli_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await connect_and_send_config(device_conn, commands)
+
+        mock_conn.send_configs.assert_awaited_once_with(commands)
+        assert result == mock_response
+
+    @pytest.mark.asyncio
+    async def test_connect_uses_defaults(self):
+        """Test that default platform and transport are applied."""
+        mock_conn = AsyncMock()
+        mock_conn.send_configs = AsyncMock(return_value=MagicMock())
+
+        device_conn = {
+            "host": "10.0.0.1",
+            "auth_username": "admin",
+            "auth_password": "secret",
+        }
+
+        with patch("autonetops.utils.helpers.AsyncScrapli") as mock_scrapli_cls:
+            mock_scrapli_cls.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_scrapli_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            await connect_and_send_config(device_conn, ["hostname R1"])
+
+        call_kwargs = mock_scrapli_cls.call_args[1]
+        assert call_kwargs["platform"] == "cisco_iosxe"
+        assert call_kwargs["transport"] == "asyncssh"
+        assert call_kwargs["auth_strict_key"] is False

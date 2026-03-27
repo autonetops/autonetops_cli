@@ -184,6 +184,6 @@ class CliConfig(object):
             success, reason = self.delete_snmp_community(community["name"])
             if not success:
                 return_status = False
-                return_reasons = return_reasons.append(f"Community {community}, {reason}")
+                return_reasons.append(f"Community {community['name']}, {reason}")
 
         return (return_status, ", ".join(return_reasons))
