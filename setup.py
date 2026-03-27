@@ -8,8 +8,7 @@ setup(
     install_requires=[
         'click>=8.1.7',
         'PyYAML>=6.0',
-        'netmiko>=4.4.0',
-        'Jinja2>=3.1.2',
+        'scrapli[asyncssh]>=2024.1.30',
         'rich>=13.4.0',
     ],
     entry_points={
