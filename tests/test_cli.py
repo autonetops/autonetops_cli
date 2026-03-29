@@ -12,26 +12,65 @@ from autonetops.autonetops import cli, parse_task_range
 class TestParseTaskRange:
     """Tests for parse_task_range helper."""
 
-    def test_single_number(self):
-        assert parse_task_range("3") == [3]
+    def test_single_number(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        (solutions / "task3.yaml").write_text("")
+        assert parse_task_range("3", str(solutions)) == [3]
 
-    def test_range(self):
-        assert parse_task_range("2-5") == [2, 3, 4, 5]
+    def test_single_number_no_file(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        assert parse_task_range("3", str(solutions)) == [3]
 
-    def test_range_single_span(self):
-        assert parse_task_range("4-4") == [4]
+    def test_range(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        for i in range(2, 6):
+            (solutions / f"task{i}.yaml").write_text("")
+        assert parse_task_range("2-5", str(solutions)) == [2, 3, 4, 5]
 
-    def test_invalid_string(self):
+    def test_range_single_span(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        (solutions / "task4.yaml").write_text("")
+        assert parse_task_range("4-4", str(solutions)) == [4]
+
+    def test_range_includes_subtasks(self, tmp_path):
+        """Test that range 1-9 includes subtasks like task61, task92."""
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        for name in ["task1", "task2", "task3", "task4", "task5",
+                      "task61", "task62", "task7", "task8", "task91", "task92"]:
+            (solutions / f"{name}.yaml").write_text("")
+        result = parse_task_range("1-9", str(solutions))
+        assert result == [1, 2, 3, 4, 5, 7, 8, 61, 62, 91, 92]
+
+    def test_single_number_includes_subtasks(self, tmp_path):
+        """Test that single number 6 matches task61 and task62."""
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        (solutions / "task61.yaml").write_text("")
+        (solutions / "task62.yaml").write_text("")
+        assert parse_task_range("6", str(solutions)) == [61, 62]
+
+    def test_invalid_string(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
         with pytest.raises(click.BadParameter):
-            parse_task_range("abc")
+            parse_task_range("abc", str(solutions))
 
-    def test_invalid_range(self):
+    def test_invalid_range(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
         with pytest.raises(click.BadParameter):
-            parse_task_range("a-b")
+            parse_task_range("a-b", str(solutions))
 
-    def test_reversed_range(self):
+    def test_reversed_range(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
         with pytest.raises(click.BadParameter):
-            parse_task_range("5-2")
+            parse_task_range("5-2", str(solutions))
 
     def test_all_discovers_tasks(self, tmp_path):
         """Test 'all' discovers and sorts task files."""

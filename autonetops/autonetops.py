@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import subprocess
 
 import click
@@ -77,14 +78,18 @@ def discover_task_numbers(solutions_dir):
 
 
 def parse_task_range(value, solutions_dir=None):
-    """Parse a task range string like '3', '2-5', or 'all' into a list of ints."""
+    """Parse a task range string like '3', '2-5', or 'all' into a list of ints.
+
+    For ranges like '1-9', discovers all task files whose leading digit falls
+    within the range (e.g. task61.yaml is included when range covers 6).
+    """
+    if solutions_dir is None:
+        raise click.BadParameter("Cannot resolve tasks without a solutions directory.")
+    all_numbers = discover_task_numbers(solutions_dir)
     if value == "all":
-        if solutions_dir is None:
-            raise click.BadParameter("Cannot use 'all' without a solutions directory.")
-        numbers = discover_task_numbers(solutions_dir)
-        if not numbers:
+        if not all_numbers:
             raise click.BadParameter(f"No task files found in {solutions_dir}.")
-        return numbers
+        return all_numbers
     if "-" in value:
         parts = value.split("-", 1)
         try:
@@ -93,11 +98,16 @@ def parse_task_range(value, solutions_dir=None):
             raise click.BadParameter(f"Invalid range '{value}'. Use a number, range (2-5), or 'all'.")
         if start > end:
             raise click.BadParameter(f"Start ({start}) must be <= end ({end}).")
-        return list(range(start, end + 1))
+        matched = [n for n in all_numbers if start <= int(str(n)[0]) <= end]
+        if not matched:
+            return list(range(start, end + 1))
+        return matched
     try:
-        return [int(value)]
+        single = int(value)
     except ValueError:
         raise click.BadParameter(f"Invalid task '{value}'. Use a number, range (2-5), or 'all'.")
+    matched = [n for n in all_numbers if str(n).startswith(value)]
+    return matched if matched else [single]
 
 
 @cli.command(name="task", help="Render and push configuration from task(s). Accepts a number (3), range (2-5), or 'all'.")
@@ -123,6 +133,9 @@ def task(ctx, task_range, show):
         yaml_file = f"task{task_number}.yaml"
         yaml_path = f"{wsf}/solutions/{yaml_file}"
         rprint(f"[bold blue]--- Task {task_number} ---[/bold blue]")
+        if not os.path.exists(yaml_path):
+            rprint(f"[yellow]Skipping task {task_number}: {yaml_file} not found.[/yellow]")
+            continue
         devices = load_yaml(yaml_path)
 
         for device, data in devices.items():
