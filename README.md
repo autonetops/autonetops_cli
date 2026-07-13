@@ -11,12 +11,6 @@ pip install -e .          # editable install for development
 pip install -e ".[dev]"   # also installs pytest to run the test suite
 ```
 
-On the jump server:
-
-```
-sudo /usr/local/bin/python -m pip install <path_to_repo>
-```
-
 ## Usage
 
 ```
