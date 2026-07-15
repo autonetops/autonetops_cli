@@ -10,6 +10,8 @@ from .utils.helpers import (
     load_yaml,
     convert_yaml_to_commands,
     connect_and_send_config,
+    is_local_target,
+    run_local_config,
 )
 
 
@@ -32,25 +34,51 @@ def cli(ctx, inventory, debug, cli_verbose):
     ctx.obj["task_number"] = set()
 
 
-async def _push_device_config(device_name, data, debug):
-    """Push configuration to a single device asynchronously."""
-    commands = convert_yaml_to_commands(data["config"])
+async def _push_device_config(device_name, data, debug, cli_verbose=False):
+    """Push configuration to a single device, or run it on the local host.
+
+    Entries flagged for the local host (e.g. ``platform: local``) have their
+    ``config`` block executed as a shell script here; everything else is sent to
+    a network device over SSH.
+    """
+    conn = data.get("conn", {})
+    config = data.get("config", "")
     try:
-        await connect_and_send_config(data["conn"], commands)
-        rprint(f"[green]Configuration pushed to {device_name} successfully.[/green]")
+        if is_local_target(conn):
+            output = await run_local_config(config, cli_verbose)
+            rprint(f"[green]Host commands for {device_name} ran successfully.[/green]")
+            if not cli_verbose and output.strip():
+                rprint(output.rstrip())
+        else:
+            commands = convert_yaml_to_commands(config)
+            await connect_and_send_config(conn, commands)
+            rprint(f"[green]Configuration pushed to {device_name} successfully.[/green]")
     except Exception as e:
         rprint(f"Failed to push configuration to {device_name}: {e}")
         if debug:
             rprint(f"[red]Error:[/red] {e}")
 
 
-async def _push_all_configs(devices, debug):
-    """Push configuration to all devices in parallel."""
-    tasks = [
-        _push_device_config(name, data, debug)
-        for name, data in devices.items()
-    ]
-    await asyncio.gather(*tasks)
+async def _push_all_configs(devices, debug, cli_verbose=False):
+    """Push device configs in parallel; run host entries serially in file order.
+
+    Network (SSH) entries are independent, so they run concurrently. Host
+    entries share the local machine (the dpkg lock, working files, the current
+    directory), so they run one at a time in the order they appear in the file.
+    """
+    device_tasks = []
+    local_items = []
+    for name, data in devices.items():
+        if is_local_target(data.get("conn", {})):
+            local_items.append((name, data))
+        else:
+            device_tasks.append(_push_device_config(name, data, debug, cli_verbose))
+
+    async def _run_local_serially():
+        for name, data in local_items:
+            await _push_device_config(name, data, debug, cli_verbose)
+
+    await asyncio.gather(*device_tasks, _run_local_serially())
 
 
 @cli.command(name="wireshark", help="Instala as imagens para capturar pacotes")
@@ -283,7 +311,7 @@ def task(ctx, task_range, show):
                 rprint(f"[green]{data['config']}[/green]")
 
         if not show:
-            asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
+            asyncio.run(_push_all_configs(devices, ctx.obj["debug"], ctx.obj["cli_verbose"]))
 
 
 @cli.command(name="tshoot", help="Deploy a troubleshooting scenario and display the challenge.")
@@ -322,7 +350,7 @@ def tshoot(ctx, scenario_number, show):
             rprint(f"[blue]{device}:[/blue]")
             rprint(f"[green]{device_data['config']}[/green]")
     else:
-        asyncio.run(_push_all_configs(devices, ctx.obj["debug"]))
+        asyncio.run(_push_all_configs(devices, ctx.obj["debug"], ctx.obj["cli_verbose"]))
         rprint("[bold green]Troubleshooting scenario deployed. Good luck![/bold green]")
 
 

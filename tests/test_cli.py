@@ -219,6 +219,89 @@ class TestTaskCommand:
         assert "Task 1" in result.output
         assert "Task 5" in result.output
 
+    def test_task_runs_host_entry(self, tmp_path):
+        """A local/host entry in a task file runs its config on the host."""
+        marker = tmp_path / "host_ran.txt"
+        devices = {
+            "setup": {
+                "conn": {"platform": "local"},
+                "config": f"echo lab-host > {marker}",
+            }
+        }
+        yaml_file = tmp_path / "solutions" / "task1.yaml"
+        yaml_file.parent.mkdir(parents=True)
+        yaml_file.write_text(yaml.dump(devices))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["task", "1"])
+        assert result.exit_code == 0
+        assert "Host commands for setup ran successfully" in result.output
+        assert marker.read_text().strip() == "lab-host"
+
+    def test_task_mixes_host_and_device(self, tmp_path):
+        """Host and device entries coexist in one task file."""
+        devices = {
+            "r11": {
+                "config": "hostname R11",
+                "conn": {"host": "10.0.0.1", "auth_username": "admin", "auth_password": "pass"},
+            },
+            "setup": {
+                "conn": {"platform": "local"},
+                "config": "echo ok",
+            },
+        }
+        yaml_file = tmp_path / "solutions" / "task1.yaml"
+        yaml_file.parent.mkdir(parents=True)
+        yaml_file.write_text(yaml.dump(devices))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            with patch("autonetops.autonetops.connect_and_send_config", new_callable=AsyncMock):
+                result = runner.invoke(cli, ["task", "1"])
+        assert result.exit_code == 0
+        assert "Configuration pushed to r11 successfully" in result.output
+        assert "Host commands for setup ran successfully" in result.output
+
+    def test_task_host_entries_run_serially_in_order(self, tmp_path):
+        """Multiple host entries run one at a time, in file order."""
+        log = tmp_path / "order.log"
+        devices = {}
+        # Each entry sleeps in reverse order, so parallel execution would
+        # interleave the appends; serial execution preserves file order.
+        for i, delay in enumerate(["0.3", "0.2", "0.1"], start=1):
+            devices[f"step{i}"] = {
+                "conn": {"platform": "local"},
+                "config": f"sleep {delay}; echo step{i} >> {log}",
+            }
+        yaml_file = tmp_path / "solutions" / "task1.yaml"
+        yaml_file.parent.mkdir(parents=True)
+        yaml_file.write_text(yaml.dump(devices, sort_keys=False))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["task", "1"])
+        assert result.exit_code == 0
+        assert log.read_text().split() == ["step1", "step2", "step3"]
+
+    def test_task_host_entry_failure(self, tmp_path):
+        """A failing host command is reported, not raised."""
+        devices = {
+            "setup": {
+                "conn": {"platform": "local"},
+                "config": "exit 7",
+            }
+        }
+        yaml_file = tmp_path / "solutions" / "task1.yaml"
+        yaml_file.parent.mkdir(parents=True)
+        yaml_file.write_text(yaml.dump(devices))
+
+        runner = CliRunner()
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            result = runner.invoke(cli, ["task", "1"])
+        assert result.exit_code == 0
+        assert "Failed to push configuration to setup" in result.output
+
     def test_task_push_config_failure(self, tmp_path):
         """Test task command handling connection failure."""
         devices = {

@@ -4,7 +4,13 @@ import pytest
 import yaml
 from unittest.mock import patch, AsyncMock, MagicMock
 
-from autonetops.utils.helpers import load_yaml, convert_yaml_to_commands, connect_and_send_config
+from autonetops.utils.helpers import (
+    load_yaml,
+    convert_yaml_to_commands,
+    connect_and_send_config,
+    is_local_target,
+    run_local_config,
+)
 
 
 class TestLoadYaml:
@@ -112,3 +118,58 @@ class TestConnectAndSendConfig:
         assert call_kwargs["platform"] == "cisco_iosxe"
         assert call_kwargs["transport"] == "asyncssh"
         assert call_kwargs["auth_strict_key"] is False
+
+
+class TestIsLocalTarget:
+    """Tests for the is_local_target function."""
+
+    @pytest.mark.parametrize(
+        "platform", ["local", "localhost", "host", "shell", "linux", "bash", "LOCAL"]
+    )
+    def test_local_platforms(self, platform):
+        """Local platform markers are recognized (case-insensitively)."""
+        assert is_local_target({"platform": platform}) is True
+
+    def test_local_host_value(self):
+        """A localhost/local host value also flags a host entry."""
+        assert is_local_target({"host": "localhost"}) is True
+        assert is_local_target({"host": "local"}) is True
+
+    def test_network_device_is_not_local(self):
+        """A real network device entry stays on the SSH path."""
+        assert is_local_target({"host": "r11", "platform": "cisco_iosxe"}) is False
+
+    def test_empty_or_none(self):
+        """Missing/empty conn blocks are not local targets."""
+        assert is_local_target({}) is False
+        assert is_local_target(None) is False
+
+
+class TestRunLocalConfig:
+    """Tests for the run_local_config function."""
+
+    @pytest.mark.asyncio
+    async def test_runs_and_captures_output(self):
+        """A config block runs on the host and its output is returned."""
+        output = await run_local_config("echo hello\necho world")
+        assert output == "hello\nworld\n"
+
+    @pytest.mark.asyncio
+    async def test_state_persists_between_lines(self):
+        """The whole block is one shell, so cd/vars carry across lines."""
+        output = await run_local_config("cd /tmp\npwd")
+        assert output.strip() == "/tmp"
+
+    @pytest.mark.asyncio
+    async def test_nonzero_exit_raises(self):
+        """A failing command fails the task (set -e)."""
+        with pytest.raises(RuntimeError, match="status 3"):
+            await run_local_config("exit 3")
+
+    @pytest.mark.asyncio
+    async def test_fail_fast_stops_later_commands(self):
+        """set -e stops the script at the first failing command."""
+        with pytest.raises(RuntimeError) as excinfo:
+            await run_local_config("echo first\nfalse\necho second")
+        assert "first" in str(excinfo.value)
+        assert "second" not in str(excinfo.value)
