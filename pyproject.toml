@@ -7,7 +7,7 @@ name = "autonetops"
 version = "0.1.14"
 description = "Autonetops CLI for labs and exercises"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Pedro C Damasceno" }]
 classifiers = [

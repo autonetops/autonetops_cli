@@ -11,13 +11,8 @@ LOCAL_PLATFORMS = {"local", "localhost", "host", "shell", "linux", "bash"}
 
 def load_yaml(file_path):
     """Load and parse a YAML file, returning its contents."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as yf:
-            return yaml.safe_load(yf)
-    except FileNotFoundError:
-        raise
-    except yaml.YAMLError:
-        raise
+    with open(file_path, 'r', encoding='utf-8') as yf:
+        return yaml.safe_load(yf)
 
 
 def convert_yaml_to_commands(config):
@@ -49,10 +44,11 @@ async def run_local_config(config, cli_verbose=False):
 
     Args:
         config (str): Shell commands, one per line, from the entry's ``config``.
-        cli_verbose (bool): Stream command output to the screen as it runs.
+        cli_verbose (bool): Stream command output to the screen as it runs
+            instead of capturing it.
 
     Returns:
-        str: Combined stdout/stderr produced by the script.
+        str: Combined stdout/stderr produced by the script ("" when streamed).
 
     Raises:
         RuntimeError: If the script exits with a non-zero status.
@@ -61,13 +57,11 @@ async def run_local_config(config, cli_verbose=False):
     proc = await asyncio.create_subprocess_exec(
         "bash", "-c", script,
         stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stdout=None if cli_verbose else asyncio.subprocess.PIPE,
+        stderr=None if cli_verbose else asyncio.subprocess.STDOUT,
     )
     stdout, _ = await proc.communicate()
-    output = stdout.decode(errors="replace")
-    if cli_verbose and output:
-        print(output, end="" if output.endswith("\n") else "\n")
+    output = (stdout or b"").decode(errors="replace")
     if proc.returncode != 0:
         raise RuntimeError(
             f"host commands exited with status {proc.returncode}\n{output}".rstrip()
@@ -98,4 +92,5 @@ async def connect_and_send_config(device_conn, commands):
 
     async with AsyncScrapli(**conn_params) as conn:
         response = await conn.send_configs(commands)
+        response.raise_for_status()  # a command the device rejected is a failure
         return response

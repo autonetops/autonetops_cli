@@ -95,6 +95,7 @@ class TestConnectAndSendConfig:
             result = await connect_and_send_config(device_conn, commands)
 
         mock_conn.send_configs.assert_awaited_once_with(commands)
+        mock_response.raise_for_status.assert_called_once()  # rejected commands must fail
         assert result == mock_response
 
     @pytest.mark.asyncio

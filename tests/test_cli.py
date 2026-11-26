@@ -44,7 +44,7 @@ class TestParseTaskRange:
                       "task61", "task62", "task7", "task8", "task91", "task92"]:
             (solutions / f"{name}.yaml").write_text("")
         result = parse_task_range("1-9", str(solutions))
-        assert result == [1, 2, 3, 4, 5, 7, 8, 61, 62, 91, 92]
+        assert result == [1, 2, 3, 4, 5, 61, 62, 7, 8, 91, 92]
 
     def test_single_number_includes_subtasks(self, tmp_path):
         """Test that single number 6 matches task61 and task62."""
@@ -78,8 +78,8 @@ class TestParseTaskRange:
         solutions.mkdir()
         (solutions / "task3.yaml").write_text("")
         (solutions / "task1.yaml").write_text("")
-        (solutions / "task10.yaml").write_text("")
-        assert parse_task_range("all", str(solutions)) == [1, 3, 10]
+        (solutions / "task2.yaml").write_text("")
+        assert parse_task_range("all", str(solutions)) == [1, 2, 3]
 
     def test_all_no_tasks_found(self, tmp_path):
         """Test 'all' raises when no task files exist."""
@@ -299,7 +299,7 @@ class TestTaskCommand:
         runner = CliRunner()
         with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
             result = runner.invoke(cli, ["task", "1"])
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         assert "Failed to push configuration to setup" in result.output
 
     def test_task_push_config_failure(self, tmp_path):
@@ -322,7 +322,7 @@ class TestTaskCommand:
                 side_effect=Exception("Connection failed"),
             ):
                 result = runner.invoke(cli, ["task", "1"])
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         assert "Failed to push configuration" in result.output
 
 
@@ -456,3 +456,75 @@ class TestWiresharkCommand:
         result = runner.invoke(cli, ["wireshark"])
         assert result.exit_code == 0
         assert mock_run.call_count == 2
+
+
+class TestAuditRegressions:
+    """One test per bug found in the audit."""
+
+    def _write(self, tmp_path, name, content):
+        f = tmp_path / "solutions" / name
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(content if isinstance(content, str) else yaml.dump(content, sort_keys=False))
+
+    def _run(self, tmp_path, args):
+        with patch.dict(os.environ, {"CONTAINERWSF": str(tmp_path)}):
+            return CliRunner().invoke(cli, args)
+
+    def test_all_runs_subtasks_after_their_task(self, tmp_path):
+        solutions = tmp_path / "solutions"
+        solutions.mkdir()
+        for n in (5, 61, 62, 7):
+            (solutions / f"task{n}.yaml").write_text("")
+        assert parse_task_range("all", str(solutions)) == [5, 61, 62, 7]
+
+    def test_failed_host_entry_stops_later_entries_and_tasks(self, tmp_path):
+        marker = tmp_path / "ran.txt"
+        local = {"platform": "local"}
+        self._write(tmp_path, "task1.yaml", {
+            "a": {"conn": local, "config": "exit 7"},
+            "b": {"conn": local, "config": f"touch {marker}"},
+        })
+        self._write(tmp_path, "task2.yaml", {"c": {"conn": local, "config": f"touch {marker}"}})
+        result = self._run(tmp_path, ["task", "1-2"])
+        assert result.exit_code == 1
+        assert not marker.exists()
+
+    def test_brackets_in_output_and_errors_survive(self, tmp_path):
+        local = {"platform": "local"}
+        self._write(tmp_path, "task1.yaml", {"a": {"conn": local, "config": "echo '[info] [/etc/foo]'"}})
+        self._write(tmp_path, "task2.yaml", {"a": {"conn": local, "config": "echo '[/etc/foo]'; exit 1"}})
+        ok = self._run(tmp_path, ["task", "1"])
+        assert ok.exit_code == 0 and "[info] [/etc/foo]" in ok.output
+        bad = self._run(tmp_path, ["task", "2"])
+        assert bad.exit_code == 1 and "[/etc/foo]" in bad.output
+        shown = self._run(tmp_path, ["task", "1", "--show"])
+        assert "[info] [/etc/foo]" in shown.output
+
+    def test_empty_file_and_missing_config_do_not_crash(self, tmp_path):
+        self._write(tmp_path, "task1.yaml", "")
+        self._write(tmp_path, "task2.yaml", {"r1": {"conn": {"host": "r1"}}})
+        self._write(tmp_path, "tshoot1.yaml", "")
+        assert self._run(tmp_path, ["task", "1"]).exit_code == 0
+        assert self._run(tmp_path, ["task", "2", "--show"]).exit_code == 0
+        assert self._run(tmp_path, ["tshoot", "1"]).exit_code == 0
+
+    def test_vpn_status_exits_1_when_down(self):
+        with patch("autonetops.autonetops._find_openconnect_pid", return_value=None):
+            result = CliRunner().invoke(cli, ["vpn", "status"])
+        assert result.exit_code == 1
+
+    def test_stale_pid_file_falls_back_to_pgrep(self, tmp_path):
+        from autonetops import autonetops as mod
+        pid_file = tmp_path / "openconnect.pid"
+        pid_file.write_text("999999999\n")  # no such process
+        with patch.object(mod, "VPN_PID_FILE", str(pid_file)), \
+             patch.object(mod.subprocess, "run", return_value=MagicMock(stdout="4242\n")):
+            assert mod._find_openconnect_pid() == "4242"
+
+    def test_restart_fails_when_containerlab_fails(self, tmp_path):
+        import subprocess
+        (tmp_path / "clab").mkdir()
+        (tmp_path / "clab" / "lab.clab.yaml").write_text("topology: {}")
+        err = subprocess.CalledProcessError(3, "containerlab")
+        with patch("autonetops.autonetops.subprocess.run", side_effect=err):
+            assert self._run(tmp_path, ["restart"]).exit_code == 3

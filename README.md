@@ -18,6 +18,15 @@ autonetops task 3                # render and push a single task
 autonetops task 2-5              # a range of tasks
 autonetops task all              # every task in solutions/
 autonetops task 3 --show         # print the config instead of pushing it
+```
+
+File names are read as `task<task><subtask>.yaml`: the first digit is the task,
+any following digits a subtask, so `task 6` runs `task61.yaml` and `task62.yaml`
+and they run before `task7.yaml`. Task numbers above 9 are not supported.
+
+A failed push or host command stops the run and exits 1.
+
+```
 
 autonetops tshoot 1              # deploy a troubleshooting scenario
 autonetops restart --lab <name>  # redeploy the containerlab topology
@@ -54,18 +63,19 @@ setup:                     # runs on the host
 The `config` block runs as a single `bash` script (with `set -e`, so a failing
 command fails the task, and `cd`/variables carry across lines). Commands must be
 non-interactive — use `apt install -y`, passwordless/`sudo -n`, etc.; stdin is
-closed. Add `--cli-verbose` to stream output as it runs. Host entries work in
+closed. Add `--cli-verbose` to stream output as it runs (for device entries it
+prints the device's reply after the push). Host entries work in
 `tshoot` scenarios too.
 
 Device entries are pushed in parallel, but host entries run **one at a time in
 file order** (they share the host's dpkg lock, working files, and current
 directory), so you can rely on an earlier host entry finishing before the next
-one starts.
+one starts. If one fails, the host entries after it are skipped.
 
 ### VPN
 
-Install and manage the Cisco sandbox VPN (OpenConnect). `setup` installs system
-packages and needs sudo.
+Install and manage the Cisco sandbox VPN (OpenConnect). `setup` installs the
+`openconnect` package with apt and needs sudo.
 
 ```
 autonetops vpn setup

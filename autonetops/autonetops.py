@@ -2,9 +2,11 @@ import asyncio
 import os
 import re
 import subprocess
+import traceback
 
 import click
 from rich import print as rprint
+from rich.markup import escape
 
 from .utils.helpers import (
     load_yaml,
@@ -18,20 +20,12 @@ from .utils.helpers import (
 @click.group(help="Utilities for autonetops automation.")
 @click.option("--debug", is_flag=True, help="Print debug messages during processing")
 @click.option("--cli-verbose", is_flag=True, help="Stream CLI connection info to screen")
-@click.option(
-    "-i",
-    "--inventory",
-    default="task1.yaml",
-    help="The network inventory file to operate on",
-)
 @click.pass_context
-def cli(ctx, inventory, debug, cli_verbose):
+def cli(ctx, debug, cli_verbose):
     """Autonetops CLI tool for network automation."""
     ctx.ensure_object(dict)
     ctx.obj["debug"] = debug
     ctx.obj["cli_verbose"] = cli_verbose
-    ctx.obj["inventory"] = inventory
-    ctx.obj["task_number"] = set()
 
 
 async def _push_device_config(device_name, data, debug, cli_verbose=False):
@@ -39,24 +33,28 @@ async def _push_device_config(device_name, data, debug, cli_verbose=False):
 
     Entries flagged for the local host (e.g. ``platform: local``) have their
     ``config`` block executed as a shell script here; everything else is sent to
-    a network device over SSH.
+    a network device over SSH. Returns True on success, False on failure.
     """
     conn = data.get("conn", {})
     config = data.get("config", "")
     try:
         if is_local_target(conn):
             output = await run_local_config(config, cli_verbose)
-            rprint(f"[green]Host commands for {device_name} ran successfully.[/green]")
-            if not cli_verbose and output.strip():
-                rprint(output.rstrip())
+            rprint(f"[green]Host commands for {escape(device_name)} ran successfully.[/green]")
+            if output.strip():
+                print(output.rstrip())
         else:
             commands = convert_yaml_to_commands(config)
-            await connect_and_send_config(conn, commands)
-            rprint(f"[green]Configuration pushed to {device_name} successfully.[/green]")
+            response = await connect_and_send_config(conn, commands)
+            rprint(f"[green]Configuration pushed to {escape(device_name)} successfully.[/green]")
+            if cli_verbose:
+                print(response.result)
+        return True
     except Exception as e:
-        rprint(f"Failed to push configuration to {device_name}: {e}")
+        rprint(f"[red]Failed to push configuration to {escape(device_name)}: {escape(str(e))}[/red]")
         if debug:
-            rprint(f"[red]Error:[/red] {e}")
+            traceback.print_exc()
+        return False
 
 
 async def _push_all_configs(devices, debug, cli_verbose=False):
@@ -64,7 +62,8 @@ async def _push_all_configs(devices, debug, cli_verbose=False):
 
     Network (SSH) entries are independent, so they run concurrently. Host
     entries share the local machine (the dpkg lock, working files, the current
-    directory), so they run one at a time in the order they appear in the file.
+    directory), so they run one at a time in the order they appear in the file,
+    stopping at the first one that fails. Returns True if everything succeeded.
     """
     device_tasks = []
     local_items = []
@@ -76,9 +75,11 @@ async def _push_all_configs(devices, debug, cli_verbose=False):
 
     async def _run_local_serially():
         for name, data in local_items:
-            await _push_device_config(name, data, debug, cli_verbose)
+            if not await _push_device_config(name, data, debug, cli_verbose):
+                return False
+        return True
 
-    await asyncio.gather(*device_tasks, _run_local_serially())
+    return all(await asyncio.gather(*device_tasks, _run_local_serially()))
 
 
 @cli.command(name="wireshark", help="Instala as imagens para capturar pacotes")
@@ -124,23 +125,9 @@ def vpn(ctx):
 @vpn.command(name="setup", help="Install dependencies and the OpenConnect VPN client.")
 @click.pass_context
 def vpn_setup(ctx):
-    """Update the system and install everything needed for the VPN."""
-    steps = [
-        ["sudo", "apt", "update"],
-        ["sudo", "apt", "upgrade", "-y"],
-        [
-            "sudo", "apt", "install", "-y",
-            "wget", "curl", "nano", "software-properties-common", "dirmngr",
-            "apt-transport-https", "gnupg2", "ca-certificates", "lsb-release", "unzip",
-        ],
-        ["sudo", "apt", "install", "ufw", "-y"],
-        ["sudo", "ufw", "allow", "22/tcp"],
-        ["sudo", "apt", "install", "git", "-y"],
-        ["sudo", "apt", "install", "openconnect", "-y"],
-    ]
-    for step in steps:
-        subprocess.run(step, check=True)
-    subprocess.run(["sudo", "ufw", "enable"], input="y\n", text=True, check=True)
+    """Install the OpenConnect client."""
+    subprocess.run(["sudo", "apt", "update"], check=True)
+    subprocess.run(["sudo", "apt", "install", "-y", "openconnect"], check=True)
 
     rprint("[green]==> Setup complete.[/green]")
     rprint("==> Connect to VPN:")
@@ -229,7 +216,10 @@ def vpn_disconnect(ctx):
     rprint("[green]==> VPN disconnected[/green]")
 
 def discover_task_numbers(solutions_dir):
-    """Find all task<N>.yaml files in the solutions directory and return sorted task numbers."""
+    """Find all task<N>.yaml files in the solutions directory and return task numbers.
+
+    Sorted by leading digit first, so subtasks follow their task (5, 61, 62, 7).
+    """
     import glob
     pattern = os.path.join(solutions_dir, "task*.yaml")
     numbers = []
@@ -241,7 +231,7 @@ def discover_task_numbers(solutions_dir):
             numbers.append(int(num_str))
         except ValueError:
             continue
-    return sorted(numbers)
+    return sorted(numbers, key=lambda n: (int(str(n)[0]), n))
 
 
 def parse_task_range(value, solutions_dir=None):
@@ -303,15 +293,18 @@ def task(ctx, task_range, show):
         if not os.path.exists(yaml_path):
             rprint(f"[yellow]Skipping task {task_number}: {yaml_file} not found.[/yellow]")
             continue
-        devices = load_yaml(yaml_path)
+        devices = load_yaml(yaml_path) or {}
 
         for device, data in devices.items():
             if show:
-                rprint(f"[blue]{device}:[/blue]")
-                rprint(f"[green]{data['config']}[/green]")
+                rprint(f"[blue]{escape(str(device))}:[/blue]")
+                rprint(f"[green]{escape(data.get('config', ''))}[/green]")
 
-        if not show:
-            asyncio.run(_push_all_configs(devices, ctx.obj["debug"], ctx.obj["cli_verbose"]))
+        if not show and not asyncio.run(
+            _push_all_configs(devices, ctx.obj["debug"], ctx.obj["cli_verbose"])
+        ):
+            rprint(f"[red]Task {task_number} failed, stopping.[/red]")
+            ctx.exit(1)
 
 
 @cli.command(name="tshoot", help="Deploy a troubleshooting scenario and display the challenge.")
@@ -334,12 +327,12 @@ def tshoot(ctx, scenario_number, show):
         rprint(f"[red]This lab has no troubleshooting scenario {scenario_number}.[/red]")
         return
 
-    data = load_yaml(yaml_path)
+    data = load_yaml(yaml_path) or {}
     scenario = data.get("scenario", "No scenario description provided.")
     devices = data.get("devices", {})
 
     rprint(f"[bold blue]--- Troubleshooting Scenario {scenario_number} ---[/bold blue]")
-    rprint(f"[yellow]{scenario}[/yellow]")
+    rprint(f"[yellow]{escape(str(scenario))}[/yellow]")
 
     if not devices:
         rprint("[red]No device configurations found in this scenario.[/red]")
@@ -347,15 +340,17 @@ def tshoot(ctx, scenario_number, show):
 
     if show:
         for device, device_data in devices.items():
-            rprint(f"[blue]{device}:[/blue]")
-            rprint(f"[green]{device_data['config']}[/green]")
+            rprint(f"[blue]{escape(str(device))}:[/blue]")
+            rprint(f"[green]{escape(device_data.get('config', ''))}[/green]")
     else:
-        asyncio.run(_push_all_configs(devices, ctx.obj["debug"], ctx.obj["cli_verbose"]))
+        if not asyncio.run(_push_all_configs(devices, ctx.obj["debug"], ctx.obj["cli_verbose"])):
+            rprint("[red]Troubleshooting scenario failed to deploy.[/red]")
+            ctx.exit(1)
         rprint("[bold green]Troubleshooting scenario deployed. Good luck![/bold green]")
 
 
 @cli.command(name="restart", help="Restart the lab with the specified lab name.")
-@click.option("--lab")
+@click.option("--lab", help="Lab root folder name under / (default: $CONTAINERWSF or cwd)")
 @click.pass_context
 def restart(ctx, lab):
     """Restart the lab with the specified lab name."""
@@ -367,10 +362,15 @@ def restart(ctx, lab):
         return
 
     rprint("[blue]Restarting lab[/blue]")
-    subprocess.run(["containerlab", "redeploy", "-c", "-t", lab_file], check=False)
+    try:
+        subprocess.run(["containerlab", "redeploy", "-c", "-t", lab_file], check=True)
+    except subprocess.CalledProcessError as e:
+        rprint(f"[red]containerlab redeploy failed (exit {e.returncode}).[/red]")
+        ctx.exit(e.returncode)
+    known_hosts = os.path.expanduser("~/.ssh/known_hosts")
     for i in range(6):
         subprocess.run(
-            ["ssh-keygen", "-f", "/home/vscode/.ssh/known_hosts", "-R", f"172.20.20.1{i}"],
+            ["ssh-keygen", "-f", known_hosts, "-R", f"172.20.20.1{i}"],
             check=False,
         )
 
